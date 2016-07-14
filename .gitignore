@@ -243,7 +243,5 @@ ModelManifest.xml
 
 # FAKE - F# Make
 .fake/
-
-
-# Cloud
-Cloud.xml
+/ServiceFabric.WcfCalc/PublishProfiles/Cloud.xml
+/TestClient
