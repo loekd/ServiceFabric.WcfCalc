@@ -4,43 +4,72 @@ Service Fabric Stateless Service hosting a publicly accessible (Web HTTP) WCF se
 ## What 
 This code sample shows how you can run WCF services in Stateless Services on Azure Service Fabric.
 
-## How
+Use the overload of the constructor of WcfCommunicationListener that takes 'address' instead of 'endpointResourceName', so you can influence on what URL the WCF service will be listening.
 
-The ICommunicationListener is created using the public name of the cluster on every instance.
-The public name needs to be configured as an application parameter.
+## How to create a WCF Service with a WebHttpBinding (REST):
 
-**Before publishing this application to your cluster, add a cloud configuration file**
-
-Name and path:
-
-*.\ServiceFabric.WcfCalc\ApplicationParameters\Cloud.xml*
-
-The contents need to look like the xml below:
-``` xml
-<?xml version="1.0" encoding="utf-8"?>
-<Application xmlns:xsd="http://www.w3.org/2001/XMLSchema" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" Name="fabric:/ServiceFabric.WcfCalc" xmlns="http://schemas.microsoft.com/2011/01/fabric">
-  <Parameters>
-    <Parameter Name="CalculatorService_InstanceCount" Value="-1" />
-    <Parameter Name="CalculatorService_EndpointUrl" Value="mycluster.region.cloudapp.azure.com" />
-  </Parameters>
-</Application>
-```
-
-Replace 'mycluster.region' with the name and region of your own cluster.
-
-
-### Code
-
-Essential code:
 ``` javascript
-  // first build uri from configuration
+  string host = context.NodeContext.IPAddressOrFQDN;
+  var endpointConfig = context.CodePackageActivationContext.GetEndpoint("CalculatorEndpoint");
+  int port = endpointConfig.Port;
+  string scheme = endpointConfig.Protocol.ToString();
+  string uri = string.Format(CultureInfo.InvariantCulture, "{0}://{1}:{2}/", scheme, host, port);
   var listener = new WcfCommunicationListener<ICalculatorService>(
     serviceContext: context,
     wcfServiceObject: new WcfCalculatorService(),
     listenerBinding: new WebHttpBinding(WebHttpSecurityMode.None),
-    address : new EndpointAddress(uri)
-    );
-    
-    // add WebHttpBehavior
-    var ep = listener.ServiceHost.Description.Endpoints.First();
-    ep.Behaviors.Add(new WebHttpBehavior());
+    address: new EndpointAddress(uri)
+  );
+  var ep = listener.ServiceHost.Description.Endpoints.Last();
+  ep.Behaviors.Add(new WebHttpBehavior());
+  return listener;
+```
+
+## How to create a WCF Service with a BasicHttpBinding (SOAP):
+``` javascript
+  string host = context.NodeContext.IPAddressOrFQDN;
+  var endpointConfig = context.CodePackageActivationContext.GetEndpoint("CalculatorEndpoint");
+  int port = endpointConfig.Port;
+  string scheme = endpointConfig.Protocol.ToString();
+  string uri = string.Format(CultureInfo.InvariantCulture, "{0}://{1}:{2}/", scheme, host, port);
+  var listener = new WcfCommunicationListener<ICalculatorService>(
+    serviceContext: context,
+    wcfServiceObject: new WcfCalculatorService(),
+    listenerBinding: new BasicHttpBinding(BasicHttpSecurityMode.None),
+    address: new EndpointAddress(uri)
+  );
+
+  // (Optional) Check to see if the service host already has a ServiceMetadataBehavior
+  ServiceMetadataBehavior smb = listener.ServiceHost.Description.Behaviors.Find<ServiceMetadataBehavior>();
+  if (smb == null)
+  {
+    smb = new ServiceMetadataBehavior();
+    smb.MetadataExporter.PolicyVersion = PolicyVersion.Policy15;
+    smb.HttpGetEnabled = true;
+    smb.HttpGetUrl = new Uri(uri);
+    listener.ServiceHost.Description.Behaviors.Add(smb);
+}
+return listener;
+
+```
+
+## Configuration
+
+The line
+``` javascript
+context.CodePackageActivationContext.GetEndpoint("CalculatorEndpoint")
+```
+reads its data from the file 'ServiceManifest.xml'
+Make sure the port mentioned here matches a rule in the load balancer.
+
+
+```xml
+<Resources>
+    <Endpoints>
+      <!-- This endpoint is used by the communication listener to obtain the port on which to 
+           listen. Please note that if your service is partitioned, this port is shared with 
+           replicas of different partitions that are placed in your code. -->
+      <Endpoint Name="CalculatorEndpoint" Protocol="http" Type="Input" Port="80" />
+    </Endpoints>
+  </Resources>
+  ```
